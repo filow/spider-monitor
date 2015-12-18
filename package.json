@@ -4,7 +4,8 @@
   "description": "豆瓣爬虫监控程序",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "NODE_ENV=production webpack -p"
   },
   "author": "",
   "license": "ISC",
