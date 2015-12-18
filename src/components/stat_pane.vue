@@ -6,7 +6,7 @@
   <div class="ibox-content">
 
     <div class="large-text">
-       {{data}} {{unit}}
+       {{data | p2}} {{unit}}
     </div>
     <div :id="chart_id">{{line}}</div>
   </div>
@@ -18,6 +18,7 @@
 export default {
   props: {
     title: String,
+    refresh: Number,
     data: {
       type: Number,
       default: 0
@@ -41,8 +42,8 @@ export default {
   },
   watch: {
     // 监听data的变更
-    data: function (val, oldVal) {
-      this.line.push(val)
+    refresh: function () {
+      this.line.push(this.data)
       this.line.shift()
       this.updatingChart.change()
     }
@@ -69,6 +70,11 @@ export default {
 
       }.bind(this)
     })
+  },
+  filters: {
+    p2(val) {
+      return Math.floor(val*100)/100
+    }
   }
 }
 

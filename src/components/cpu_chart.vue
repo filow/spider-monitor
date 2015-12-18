@@ -1,8 +1,8 @@
 <template>
   <div class="cpu_wrapper">
     <div class="cpu_progress">
-      <div class="cpu_progress_bar" :style="{height: value + '%', backgroundColor: color}">
-        <div class="value">{{value}}</div>
+      <div class="cpu_progress_bar" :style="{height: value*10 + '%', backgroundColor: color}">
+        <div class="value">{{value | p2}}</div>
       </div>
 
     </div>
@@ -49,6 +49,11 @@ export default {
     text: {
       type: String,
       required: true
+    }
+  },
+  filters: {
+    p2(val) {
+      return Number(val).toPrecision(2)
     }
   },
   data () {

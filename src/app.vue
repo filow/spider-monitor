@@ -3,66 +3,39 @@
     <h1>爬虫状态监控 <small>Dashboard</small></h1>
     <div class="row">
       <div class="col-md-3">
-        <stat-pane title="下载成功率" unit="%" :data="success_rate" :min="85"></stat-pane>
+        <stat-pane title="下载成功率" unit="%" :data="success_rate" :refresh="refresh_random" :min="85"></stat-pane>
       </div>
       <div class="col-md-3">
-        <stat-pane title="单页面平均抓取时长" unit="ms" :data="single_time" :max="300"></stat-pane>
+        <stat-pane title="单页面平均抓取时长" unit="ms" :data="single_time" :refresh="refresh_random" ></stat-pane>
       </div>
       <div class="col-md-3">
-        <stat-pane title="合计下载速度" unit="kb/s" :data="total_speed" :min="30"></stat-pane>
+        <stat-pane title="合计下载速度" unit="kb/s" :data="total_speed"  :refresh="refresh_random"></stat-pane>
       </div>
       <div class="col-md-3">
-        <stat-pane title="每秒处理页面" :data="page_per_second" :min="8"></stat-pane>
+        <stat-pane title="每秒处理页面" :data="page_per_second" :refresh="refresh_random"></stat-pane>
       </div>
   </div>
 
   <div class="tabs-container">
       <ul class="nav nav-tabs">
-            <li>
+            <li class="active">
               <a data-toggle="tab" href="#tab-1" aria-expanded="true">事件日志</a>
             </li>
-            <li class="active"><a data-toggle="tab" href="#tab-2" aria-expanded="false">节点信息</a></li>
+            <li><a data-toggle="tab" href="#tab-2" aria-expanded="false">节点信息</a></li>
             <li class=""><a data-toggle="tab" href="#tab-3" aria-expanded="false">数据监视</a></li>
             <li class=""><a data-toggle="tab" href="#tab-4" aria-expanded="false">队列查看</a></li>
       </ul>
       <div class="tab-content">
-          <div id="tab-1" class="tab-pane ">
+          <div id="tab-1" class="tab-pane active">
             <div class="panel-body">
-
-
-              <span>切换Log Level:</span>
-              <label>
-                <input type="checkbox" class="log_level" v-model="log_level" value="success"> <span class="label label-success">Success</span>
-              </label>
-              <label>
-                <input type="checkbox" class="log_level" v-model="log_level" value="info"> <span class="label label-info">Info</span>
-              </label>
-              <label>
-                <input type="checkbox" class="log_level" v-model="log_level" value="danger"> <span class="label label-danger">Error</span>
-              </label>
-              <div class="scroll">
-                <!--   事件日志   -->
-                <table class="table">
-                  <th width="100">时间</th>
-                  <th width="100">类型</th>
-                  <th>信息</th>
-                  <tr v-for="m in messages">
-                    <td>{{m.time | onlyTime}}</td>
-                    <td>
-                      <span class="label label-{{m.type}}">{{m.type}}</span>
-                    </td>
-                    <td>{{m.message}}</td>
-                  </tr>
-                </table>
-              </div>
-
+              <log :messages="messages"></log>
             </div>
           </div>
-          <div id="tab-2" class="tab-pane active">
+          <div id="tab-2" class="tab-pane ">
             <div class="panel-body">
-              <div v-for="i in clients"  track-by="id">
+              <div v-for="i in clients"  track-by="$index">
                 <div class="col-md-6">
-                  <client :id="i.id" :ip="i.ip" :last-active="i.lastActive" :max-age="maxAge" :cpu="i.cpu_used" :memory="i.memory_used"></client>
+                  <client :id="i.id" :last-active="i.lastActive" :performance="i.performance" :max-age="maxAge"></client>
                 </div>
 
               </div>
@@ -70,12 +43,12 @@
           </div>
           <div id="tab-3" class="tab-pane">
               <div class="panel-body">
-
+                <data-monitor :monitors="monitors"></data-monitor>
               </div>
           </div>
           <div id="tab-4" class="tab-pane">
               <div class="panel-body">
-
+                <quene :quene="quene"></quene>
               </div>
           </div>
       </div>
@@ -88,93 +61,127 @@
 <script>
 import StatPane from './components/stat_pane.vue'
 import Client from './components/client.vue'
+import DataMonitor from './components/data_monitor.vue'
+import Quene from './components/quene.vue'
+import Log from './components/log.vue'
+import io from 'socket.io-client'
 
 export default {
   data () {
     return {
-      single_time: 132,
-      total_speed: 45.2,
-      page_per_second: 12,
+      single_time: 0,
+      total_speed: 0,
+      page_per_second: 0,
       success_rate: 100,
-      clients: [
-        {
-          id: 'rse31',
-          ip: '127.0.0.1',
-          lastActive: Date.now(),
-          cpu_used: 20,
-          memory_used: 10
-        },
-        {
-          id: 'f31w1',
-          ip: '10.31.21.6',
-          lastActive: Date.now(),
-          cpu_used: 51,
-          memory_used: 6
-        },
-        {
-          id: '52fe2',
-          ip: '60.33.11.44',
-          lastActive: Date.now(),
-          cpu_used: 67,
-          memory_used: 19
-        },
-        {
-          id: '513de',
-          ip: '52.42.21.2',
-          lastActive: Date.now(),
-          cpu_used: 31,
-          memory_used: 33
-        }
-      ],
+      clients: {},
       maxAge: 30000,
-      log_level: ["success", "info", "danger"],
-      messages: []
+      messages: [],
+      monitors: [],
+      quene: [],
+      refresh_random: 0
+    }
+  },
+  methods: {
+    setClient(node) {
+      node.lastActive = Number(new Date(node.lastActive))
+      this.$set('clients._' + node.id.key, node)
+      this.analize()
+    },
+    deleteClient(key) {
+      let clients = {}
+      let k = '_' + key;
+      for(let i in this.clients) {
+        if (i !== k) {
+          clients[i] = this.clients[i]
+        }
+      }
+      this.clients = clients
+      this.analize()
+    },
+    analize() {
+      let rate = {success: 0, total: 0}
+      let single_page_time = {pages: 0, time: 0}
+      let page_total_size = 0, page_total_time = 0
+      let total_pages = 0
+      if(this.clients.length == 0) return;
+
+      for(let i in this.clients) {
+        let node = this.clients[i]
+        rate.success += node.performance.documents.success
+        rate.total += node.performance.documents.total
+        single_page_time.pages += 1
+        single_page_time.time += node.performance.time.crawl
+
+        page_total_size += node.performance.documents.single_size
+        page_total_time += node.performance.time.loop
+
+        total_pages += node.performance.documents.total
+      }
+      this.success_rate = rate.success / rate.total * 100
+      this.single_time = single_page_time.time / single_page_time.pages
+      this.single_time = single_page_time.time / single_page_time.pages
+      this.total_speed = page_total_size / page_total_time
+      this.page_per_second = total_pages / page_total_time * 1000
+      this.refresh_random = Math.random()
     }
   },
   ready() {
-    setInterval(function() {
-      var random = Math.round(Math.random() * 300 + 100)
-      this.single_time = random
-      random = Math.round(Math.random() * 900 + 100)/10
-      this.total_speed = random
-      random = Math.round(Math.random() * 20) + 5
-      this.page_per_second = random
-      random = Math.round(Math.random() * 20) + 80
-      this.success_rate = random
-
-      let type = Math.floor(Math.random() * 3)
-      let type_str = ""
-      switch (type) {
-        case 0:
-          type_str = "success"
-          break;
-        case 1:
-          type_str = "info"
-          break;
-        case 2:
-          type_str = "danger"
+    var socket = io()
+    socket.on('connect', ()=> {
+      toastr["success"]("已成功连接服务器")
+    })
+    socket.on('disconnect', ()=> {
+      toastr["error"]("与服务器的连接已断开")
+    })
+    socket.on('clients', (obj)=> {
+      console.log('[Node] 节点列表', obj)
+      this.clients = {}
+      for(let i in obj){
+        this.setClient(obj[i])
       }
-      this.messages.unshift({
-        time: Date.now(),
-        type: type_str,
-        message: 'Example Message #' + this.messages.length
-      })
-      if(this.messages.length > 30){
-        this.messages.splice(this.messages.length-1, 1)
+    })
+    socket.on('new node', (node) => {
+      console.log('[Node] 新节点#' + node.id.key, node)
+      toastr["success"]('[Node] 新节点#' + node.id.key)
+      this.setClient(node)
+    })
+    socket.on('delete node', (key) => {
+      console.log('[Node] 删除节点#' + key)
+      toastr["info"]('[Node] 删除节点#' + key)
+      this.deleteClient(key)
+    })
+    socket.on('update node', (node) => {
+      console.log('[Node] 更新节点#' + node.id.key)
+      this.setClient(node)
+      // this.deleteClient(key)
+    })
+    socket.on('configs', (obj)=> {
+      console.log('[Config] ',obj)
+      this.maxAge = obj.maxAge
+    })
+    socket.on('log', (d) => {
+      this.messages.unshift(d)
+      if (this.messages.length > 50) {
+        this.messages.pop()
       }
-    }.bind(this), 1000)
-
-
+    })
+    socket.on('data monitor', (d) => {
+      this.monitors.unshift(d)
+      console.log(d)
+      if (this.monitors.length > 50) {
+        this.monitors.pop()
+      }
+    })
+    socket.on('quene stat', (d) => {
+      this.quene = d
+    })
   },
   components: {
     StatPane,
-    Client
-  },
-  filters: {
-    onlyTime(val) {
-      let t = new Date(val)
-      return `${t.getHours()}:${t.getMinutes()}:${t.getSeconds()}`
-    }
+    Client,
+    Log,
+    DataMonitor,
+    Quene
   }
 }
 
@@ -188,8 +195,5 @@ h1 {
         font-weight: 100;
     }
 }
-div.scroll {
-  max-height: 400px;
-  overflow: scroll;
-}
+
 </style>
