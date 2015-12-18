@@ -36,7 +36,8 @@ module.exports = {
         loader: 'url-loader?limit=8192'
       }
     ]
-  }
+  },
+  plugins: []
 };
 
 if (process.env.NODE_ENV === 'production') {
